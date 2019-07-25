@@ -277,3 +277,22 @@ This got a little confusing the last time we tried this so here is a way to veri
     - DESTINATION_COUNTRY: rus
     - PRODUCT_CODE: 0804
     - YEAR: 2012
+
+### `generate_bilateral_exports`
+
+#### Usage
+
+`python run.py generate_bilateral_exports`
+
+#### Description
+
+This generates JSON files for trade between to countries saved in `data/bilateral-exports/{src_country}-{dst_country}.json`
+This is used to generate all the other items that came on the container with the product of your choice on the MoreAndMore website
+
+
+#### Verify the data
+
+    Get exports from src country to dst country.
+    The data is sorted based on the largest exports from src country
+    To verify https://oec.world/en/visualize/tree_map/{config["classification_system"]}/export/{src}/{dst}/show/{config["year"]}/
+    The number of exports is limited using ["more_and_more_store"]["max_export_products"]

@@ -24,6 +24,13 @@ def hs07_data(base):
         return [r for r in reader]
 
 
+def product_sources(base):
+    with open(
+        os.path.join(base, "store-menu", "product_sources.json")
+    ) as products_file:
+        yield json.load(products_file)
+
+
 def hs07_description(hs_code, classifications):
     for row in classifications:
         if row["hs07"] == hs_code:
@@ -31,8 +38,8 @@ def hs07_description(hs_code, classifications):
     return ()
 
 
-def get_all_exports(config):
-    country = config["exports"]["country_code"]
+def get_all_exports(config, country_code=None):
+    country = country_code if country_code else config["exports"]["country_code"]
     req = "https://atlas.media.mit.edu/%s/export/%s/%s/all/show" % (
         config["classification_system"],
         config["year"],
@@ -45,7 +52,8 @@ def get_all_exports(config):
     return rca_dict
 
 
-def save_all_exports(base, config, data):
+def save_all_exports(base, config, data, country_code=None):
+    country_code = country_code if country_code else config["exports"]["country_code"]
     folder = os.path.join(base, "exports")
     if not os.path.exists(folder):
         os.makedirs(folder)
@@ -53,15 +61,46 @@ def save_all_exports(base, config, data):
         os.path.join(
             folder,
             "%s-%s-%s-rca.json"
-            % (
-                config["exports"]["country_code"],
-                config["year"],
-                config["classification_system"],
-            ),
+            % (country_code, config["year"], config["classification_system"]),
         ),
         "w",
     ) as out:
         json.dump(data, out)
+
+
+def save_bilateral_exports(base, config, src, dst, data):
+    folder = os.path.join(base, "bilateral-exports")
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    with open(
+        os.path.join(
+            folder,
+            "%s-%s-%s-%s.json"
+            % (src, dst, config["year"], config["classification_system"]),
+        ),
+        "w",
+    ) as out:
+        json.dump(data, out)
+
+
+def bilateral_exports_exist(base, config, src, dst):
+    folder = os.path.join(base, "bilateral-exports")
+    b_exports = os.path.join(
+        folder,
+        "%s-%s-%s-%s.json"
+        % (src, dst, config["year"], config["classification_system"]),
+    )
+    return os.path.exists(b_exports)
+
+
+def exports_exist(base, config, country_code):
+    exports_file = "%s-%s-%s-rca.json" % (
+        country_code,
+        config["year"],
+        config["classification_system"],
+    )
+    exports_path = os.path.join(base, "exports", exports_file)
+    return os.path.exists(exports_path)
 
 
 def icon_path(base, hs_code):
@@ -73,6 +112,10 @@ def icon_exists(base, hs_code):
 
 
 def get_top_exports(base, config, num_exports=0, has_icon=False):
+    """
+    Returns a list of top_exports for country specified in config["exports"]["country_code"]
+    The list is sorted by largest RCA (worlds fair share) value for each HS CODE
+    """
     num_exports = config["exports"]["num_exports"] if num_exports < 1 else num_exports
     country_rca_path = "%s-%s-%s-rca.json" % (
         config["exports"]["country_code"],
@@ -128,8 +171,12 @@ def parse_country_id(id):
 
 
 def get_source_countries(config, country, hs_code):
+    """
+    Returns a list of countries a given country could have imported a given hs_code from
+    The list is sorted by largest import values in descending orders.
+    Number of countries return is capped by config["more_and_more_store"]["num_src_countries"]
+    """
     num_src_countries = config["more_and_more_store"]["num_src_countries"]
-    # where does country import hs_code from?
     country_req = "http://atlas.media.mit.edu/{}/import/{}/{}/show/{}/".format(
         config["classification_system"], config["year"], country, hs_code
     )
@@ -139,6 +186,41 @@ def get_source_countries(config, country, hs_code):
     import_data.sort(key=lambda x: x["import_val"], reverse=True)
     dest_countries = [parse_country_id(d["dest_id"]) for d in import_data]
     return dest_countries[:num_src_countries]
+
+
+def get_products(base, config, src, dst):
+    """
+    Get exports from src country to dst country.
+    The data is sorted based on the largest exports from src country
+    To verify https://oec.world/en/visualize/tree_map/{config["classification_system"]}/export/{src}/{dst}/show/{config["year"]}/
+    The number of exports is limited using ["more_and_more_store"]["max_export_products"]
+    """
+    products_req = "https://atlas.media.mit.edu/{}/export/{}/{}/{}/all".format(
+        config["classification_system"], config["year"], src, dst
+    )
+
+    products_req
+    products_resp = requests.get(products_req)
+    if products_resp.status_code != 200:
+        print("HTTP error:  %d" % (products_resp.status_code))
+        return []
+    data = [
+        d
+        for d in json.loads(products_resp.text)["data"]
+        if "export_val" in d and d["hs07_id_len"] == 6
+    ]
+    data.sort(key=lambda x: x["export_val"], reverse=True)
+
+    if len(data) > config["more_and_more_store"]["max_export_products"]:
+        data = data[: config["more_and_more_store"]["max_export_products"]]
+
+    products = set([d["hs07_id"][-4:] for d in data if d["hs07_id_len"] == 6])
+    products_with_icons = [
+        product_hscode
+        for product_hscode in products
+        if icon_exists(base, product_hscode)
+    ]
+    return products_with_icons
 
 
 def save_store_menu(base, config, products_srcs):
@@ -158,7 +240,6 @@ def get_icon_dim(base, hs_code):
 
 
 def generate_grid(base, **kwargs):
-    # print(grid_params)
     country_code, width, height, x_padding, y_padding, hs_codes = kwargs.values()
     grid = Image.new("RGB", (width, height), "white")
     icon_width, icon_height = get_icon_dim(base, hs_codes[0])

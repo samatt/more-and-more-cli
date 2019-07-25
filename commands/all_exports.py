@@ -8,5 +8,5 @@ def all_exports(ctx):
     for config in conf(ctx.obj["base"]):
         exports = get_all_exports(config)
         hs07_data(ctx.obj["base"])
-        # save_all_exports(ctx.obj["base"], config, exports)
+        save_all_exports(ctx.obj["base"], config, exports)
 

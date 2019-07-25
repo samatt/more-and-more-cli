@@ -48,7 +48,8 @@
       "0207",
       "7108"
     ],
-    "num_src_countries": 10
+    "num_src_countries": 10,
+    "max_export_products": 500
   },
   "exports": {
     "country_code": "nor",
